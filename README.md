@@ -31,3 +31,8 @@ TRON 생태계용 AI 자산배분·Yield Planning 도우미의 **기획·구현 
 2. [ROLES.md](./ROLES.md)에서 내 역할의 구현 범위와 발급받을 키를 확인한다.
 3. OVERVIEW §6 체크리스트대로 키, 지갑, MCP를 준비하고 `.env.local`을 만든다. 키는 이 파일에만 넣는다.
 4. 구현 중에는 [IMPLEMENTATION_WORKFLOW.md](./IMPLEMENTATION_WORKFLOW.md)의 내 단계 완료 기준을 확인한다.
+
+## 개발한 결과물은 어디에?
+
+1. TeamBaek 디렉터리는 결과물이 올 디렉터리이다.
+2. 디렉터리 밑에 각자 이름 안에 구현한 프로젝트를 넣어 Commit한다. 
