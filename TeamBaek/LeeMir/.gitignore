@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.vite/
+.env
+.env.*
+!.env.example
+.DS_Store
+coverage/
+tmp/
+.npm-cache/
+data/snapshots/
+*.log
