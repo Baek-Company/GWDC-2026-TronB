@@ -36,3 +36,5 @@ TRON 생태계용 AI 자산배분·Yield Planning 도우미의 **기획·구현 
 1. TeamBaek 디렉터리는 결과물이 올 디렉터리이다.
 2. 디렉터리 밑에 각자 이름 안에 구현한 프로젝트를 넣어 Commit한다. 
 3. 결과물을 올릴 땐 자신의 이름으로 된 브랜치를 만들고 거기서 작업 후 Pull Request한다.
+
+<img width="3530" height="2218" alt="Image" src="https://github.com/user-attachments/assets/1d9f86f8-4040-4685-bdee-587ad0b8897d" />
