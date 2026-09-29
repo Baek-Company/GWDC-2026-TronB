@@ -8,16 +8,19 @@ import PlanComparison from "./features/plans/PlanComparison";
 import MarketData from "./features/market/MarketData";
 import NileExecution from "./features/execution/NileExecution";
 import Review from "./features/review/Review";
+import ExecutionLog from "./features/execution/ExecutionLog";
+import { useTxPolling } from "./lib/useTxPolling";
 import { ModeBadge } from "./features/common";
 
-export type Tab = "overview" | "needs" | "plans" | "market" | "nile" | "review";
+export type Tab = "overview" | "needs" | "plans" | "market" | "nile" | "log" | "review";
 const TABS: { id: Tab; label: string }[] = [
   { id: "overview", label: "개요" },
   { id: "needs", label: "요구 분석" },
   { id: "plans", label: "계획 비교" },
-  { id: "market", label: "시장 데이터" },
   { id: "nile", label: "Nile 실행" },
+  { id: "log", label: "실행 기록" },
   { id: "review", label: "검토" },
+  { id: "market", label: "시장 데이터" },
 ];
 
 const WELCOME =
@@ -70,6 +73,9 @@ export default function App() {
     setTab("overview");
   };
 
+  // 미확정 Nile 거래 재조회: 어느 탭을 보고 있어도 돈다
+  useTxPolling(state, update, notify);
+
   const latest = state.analyses[state.analyses.length - 1];
 
   return (
@@ -77,8 +83,8 @@ export default function App() {
       <header className="header">
         <div className="header-inner">
           <div className="brand" onClick={() => setTab("overview")}>
-            <div className="brand-logo">
-              G<span>W</span>DC
+            <div className="brand-logo" title="TRON Money Management">
+              TRO<span>MM</span>
             </div>
             <div className="brand-sub">TRON과 함께, 더 나은 내일의 자산 계획</div>
           </div>
@@ -102,10 +108,11 @@ export default function App() {
       <main className="page">
         {healthErr && <div className="callout red" style={{ marginBottom: 16 }}>{healthErr}</div>}
         {tab === "overview" && <Overview state={state} dataMode={health?.config.dataMode} onStart={() => setTab("needs")} />}
-        {tab === "needs" && <Conversation state={state} update={update} health={health} goPlans={() => setTab("plans")} notify={notify} />}
+        {tab === "needs" && <Conversation state={state} update={update} goPlans={() => setTab("plans")} notify={notify} />}
         {tab === "plans" && <PlanComparison state={state} update={update} result={latest} goNeeds={() => setTab("needs")} goNile={() => setTab("nile")} />}
         {tab === "market" && <MarketData health={health} />}
-        {tab === "nile" && <NileExecution state={state} update={update} health={health} notify={notify} />}
+        {tab === "nile" && <NileExecution state={state} update={update} health={health} notify={notify} goLog={() => setTab("log")} />}
+        {tab === "log" && <ExecutionLog state={state} goNile={() => setTab("nile")} />}
         {tab === "review" && <Review state={state} update={update} notify={notify} />}
       </main>
       {toast && <div className="toast">{toast}</div>}

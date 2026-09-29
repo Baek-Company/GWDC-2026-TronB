@@ -1,4 +1,3 @@
-import { Decimal } from "../../shared/units";
 import { fmt } from "../../shared/units";
 import type { MissingField, NeedsPatch, PlanningResult, UserNeeds } from "../../shared/schemas";
 
@@ -53,9 +52,22 @@ export function templateExtract(text: string, lastAsked?: MissingField, today?: 
     rest = rest.replace(days[0], " ");
   }
 
-  // 보유 금액
-  const amt = rest.match(new RegExp(`${NUM}\\s*(USDT|TRX|테더)`, "i"));
-  if (amt) patch.amount = clean(amt[1]);
+  // 보유 금액: "1,000 USDT", "USDT 5,000", 여러 자산이면 전체 목록
+  const found: { asset: "USDT" | "TRX"; amount: string }[] = [];
+  rest.replace(new RegExp(`${NUM}\\s*(USDT|TRX|테더)|(USDT|TRX|테더)\\s*${NUM}`, "gi"), (_, a1, s1, s2, a2) => {
+    const asset = /TRX/i.test(s1 ?? s2) ? "TRX" : "USDT";
+    found.push({ asset, amount: clean(a1 ?? a2) });
+    return " ";
+  });
+  const assets = new Set(found.map((f) => f.asset));
+  if (assets.size > 1) {
+    patch.holdings = found;
+    patch.asset = found[0].asset;
+    patch.amount = found[0].amount;
+  } else if (found.length) {
+    patch.amount = found[0].amount;
+    patch.asset = found[0].asset;
+  }
 
   // 위험 성향
   if (/보수|안정적|안전/.test(text)) patch.riskProfile = "conservative";
@@ -93,8 +105,4 @@ export function templateExplain(r: Omit<PlanningResult, "explanation">): string 
   lines.push(`추천: ${rec.title}. ${r.recommendation.reason}`);
   if (r.chain === "mainnet") lines.push("이 결과는 입력과 조회 시점 데이터에 근거한 조건부 분석이며 수익을 보장하지 않습니다.");
   return lines.join(" ");
-}
-
-export function isZero(v?: string) {
-  return v !== undefined && new Decimal(v).isZero();
 }

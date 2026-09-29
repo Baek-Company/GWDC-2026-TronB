@@ -24,14 +24,21 @@ export function dataIssues(q: ProductQuote | undefined, chain: ProductQuote["cha
   return { blocking, conditional };
 }
 
-export function lendingIssues(q: ProductQuote | undefined, invested: Decimal): string[] {
+export function lendingIssues(q: ProductQuote | undefined, _invested: Decimal): string[] {
   const r: string[] = [];
   if (!q) return r;
   if (!q.active) r.push(`${q.market} 시장이 비활성 상태입니다${q.inactiveReason ? `: ${q.inactiveReason}` : ""}.`);
-  if (q.liquidity !== undefined && new Decimal(q.liquidity).lt(invested))
-    r.push(`${q.market} 인출 가능 유동성(${new Decimal(q.liquidity).toFixed(2)} ${q.token})이 예치 예정액보다 적습니다.`);
   if (!q.baseRate) r.push(`${q.market} 기본 금리를 확인하지 못했습니다.`);
   return r;
+}
+
+/**
+ * 인출 유동성 주의: 시장 현금이 예치 예정액보다 적으면, 예치 직후에는 내 예치금만큼 현금이 늘지만 차입자가 빌려 가면 만기 인출이 늦어질 수 있다.
+ * 실행을 막을 사유는 아니므로 조건부(주의)로 보인다.
+ */
+export function lendingWarnings(q: ProductQuote | undefined, invested: Decimal): string[] {
+  if (!q || q.liquidity === undefined || !new Decimal(q.liquidity).lt(invested)) return [];
+  return [`${q.market} 시장 현금(${new Decimal(q.liquidity).toFixed(2)} ${q.token})이 예치 예정액보다 적습니다. 예치 직후에는 인출할 수 있지만, 차입이 늘면 만기 인출이 늦어질 수 있습니다.`];
 }
 
 export function psmIssues(q: ProductQuote | undefined, invested: Decimal): string[] {

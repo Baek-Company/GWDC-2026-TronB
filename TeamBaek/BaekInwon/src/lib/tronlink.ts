@@ -93,16 +93,48 @@ export async function signAndSend(opts: {
     opts.from,
   );
   if (!built?.result?.result || !built.transaction) throw new Error(`거래 생성 실패: ${built?.result?.message ?? "알 수 없음"}`);
+  return signBroadcast(t, built.transaction, opts.onSigned);
+}
+
+/** TRON 시스템 거래 (Stake 2.0 스테이킹·투표·해제·인출·보상 청구). 계약 호출이 아니라 Energy가 들지 않는다 */
+export type SystemAction =
+  | { type: "stake"; amountSun: bigint }
+  | { type: "vote"; sr: string; votes: number }
+  | { type: "unstake"; amountSun: bigint }
+  | { type: "withdraw_unfrozen" }
+  | { type: "claim_reward" };
+
+export async function signAndSendSystem(opts: { action: SystemAction; from: string; onSigned: (txId: string) => void }): Promise<string> {
+  const t = tw();
+  if (!t) throw new Error("TronLink가 연결되지 않았습니다.");
+  const b = t.transactionBuilder;
+  const a = opts.action;
+  let tx: any;
+  try {
+    // 스테이킹 자원은 대역폭으로 고정한다 (투표권은 자원 종류와 무관하게 1 TRX = 1표)
+    if (a.type === "stake") tx = await b.freezeBalanceV2(Number(a.amountSun), "BANDWIDTH", opts.from);
+    else if (a.type === "vote") tx = await b.vote({ [a.sr]: a.votes }, opts.from);
+    else if (a.type === "unstake") tx = await b.unfreezeBalanceV2(Number(a.amountSun), "BANDWIDTH", opts.from);
+    else if (a.type === "withdraw_unfrozen") tx = await b.withdrawExpireUnfreeze(opts.from);
+    else tx = await b.withdrawBlockRewards(opts.from);
+  } catch (e) {
+    throw new Error(`거래 생성 실패: ${String((e as Error)?.message ?? e)}`);
+  }
+  if (!tx?.txID) throw new Error("거래 생성 실패: 노드 응답에 txID가 없습니다.");
+  return signBroadcast(t, tx, opts.onSigned);
+}
+
+async function signBroadcast(t: any, transaction: any, onSigned: (txId: string) => void): Promise<string> {
   let signed: any;
   try {
-    signed = await t.trx.sign(built.transaction);
+    signed = await t.trx.sign(transaction);
   } catch (e) {
     const msg = String((e as Error)?.message ?? e);
     if (/cancel|reject|declin|denied|확인|취소/i.test(msg)) throw new SignRejected("사용자가 서명을 거부했습니다.");
     throw new SignRejected(`서명되지 않았습니다: ${msg}`);
   }
   const txId: string = signed.txID;
-  opts.onSigned(txId);
+  onSigned(txId);
   try {
     const r = await t.trx.sendRawTransaction(signed);
     if (r?.result === true || r?.txid) return txId;

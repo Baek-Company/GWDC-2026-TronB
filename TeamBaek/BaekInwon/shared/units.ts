@@ -4,8 +4,6 @@ Decimal.set({ precision: 40, rounding: Decimal.ROUND_DOWN });
 
 export { Decimal };
 
-export const SUN_PER_TRX = 1_000_000n;
-
 /** "12.345" (decimals=6) → 12345000n. 정밀도를 넘는 소수는 거부한다. */
 export function toBaseUnits(amount: string, decimals: number): bigint {
   if (!/^\d+(\.\d+)?$/.test(amount)) throw new Error(`잘못된 금액: ${amount}`);

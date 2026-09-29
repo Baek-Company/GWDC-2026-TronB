@@ -61,5 +61,17 @@ describe("AI 설명 숫자 검증", () => {
     expect(unknownNumbers("800 USDT를 예치하면 순수익 -6.10 USDT, 손익분기 146,320일, 금리 2.0022%", data)).toEqual([]);
     expect(unknownNumbers("손익분기는 1,463,199일입니다", data)).toEqual(["1,463,199"]);
     expect(unknownNumbers("계획 A와 B 중 2개", data)).toEqual([]);
+    // 소수 4자리를 넘는 값을 글자 그대로 인용한 경우는 허용한다
+    expect(unknownNumbers("지갑 잔고는 96083.313932 TRX입니다", { trx: "96083.313932" })).toEqual([]);
+    expect(unknownNumbers("지갑 잔고는 96083.313933 TRX입니다", { trx: "96083.313932" })).toEqual(["96083.313933"]);
+  });
+  it("다른 언어·필드 이름·영문 추론 누출을 찾아낸다", async () => {
+    const { explanationIssues } = await import("../server/llm/provider");
+    expect(explanationIssues("JustLend jUSDT에 800 USDT를 예치하면 왕복 거래비용 7.44 USDT를 차감해 순수익은 -6.14 USDT입니다.")).toEqual([]);
+    expect(explanationIssues("투자 가능 금액이 남는다,これにより 비용이 없다")).toContain("한국어 외 문자");
+    expect(explanationIssues("계획 A는 왕복 비용을 뜻하는 costsTrx 값이 크고 모든 계획이 eligible 상태이다").some((x) => x.startsWith("필드 이름"))).toBe(true);
+    expect(explanationIssues("We need to produce a Korean explanation 4-6 sentences. 좋다")).toContain("영문 위주 응답");
+    expect(explanationIssues("jTRX 잔고가 0입니다. meanwhile, 지갑 잔고는 유지됩니다.").some((x) => x.startsWith("영어 단어"))).toBe(true);
+    expect(explanationIssues("jTRX 전체를 redeem했고 Energy 223341을 썼습니다. 보유(HOLD)를 권고합니다.")).toEqual([]);
   });
 });

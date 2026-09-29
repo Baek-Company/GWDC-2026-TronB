@@ -24,8 +24,10 @@
 [Mainnet 분석]  요구사항 확인 → A/B/보유 비교 → 지출일 변경 시 재계산
                 (실데이터 조회, 거래 없음, "조건부 분석"으로 표시)
 
-[Nile 실행]     별도 요구사항 확인 → Nile 계획 2개 비교·선택
-                → 미리보기 → 사용자 확인 → TronLink 서명 → 확정 → 같은 포지션 재조회
+[Nile 실행]     별도 요구사항 확인(대화·폼, 지출일·위험 성향) → 같은 계획 엔진으로 Nile 계획 비교·선택
+                (jTRX 최대/절반 예치, TRX 스테이킹 C, 인출일별 분산 L)
+                → 예치 / 인출 버튼 (묶음 전체 확인 한 번 → 거래마다 서명 직전 재확인
+                   → TronLink 서명 → 확정 영수증 → 다음 거래) → 같은 포지션 재조회
 ```
 
 **Mainnet 계획을 선택한 뒤 Nile 거래로 이어지는 흐름은 만들지 않는다.** Mainnet 예상 APY를 Nile 실제 수익과 합치지 않는다.
@@ -72,7 +74,7 @@
 
 | 역할 | 핵심 구현 | 키 / 계정 | MCP |
 | --- | --- | --- | --- |
-| **① 화면·AI·통합** | 대화·요약·비교 화면, `server/index.ts`, `server/llm/*`(NIM, 템플릿), 스키마 취합, README | **NIM API Key**, TronGrid, (대기) TRON LLM | — |
+| **① 화면·AI·통합** | 대화·요약·비교 화면, `server/index.ts`, `server/llm/*`(Bank of AI, NIM, 템플릿), 스키마 취합, README | **Bank of AI API Key**(TRON LLM), NIM API Key(예비), TronGrid | — |
 | **② MCP·데이터** | `server/mcp/*`(연결, 허용 목록), `server/data/*`(JustLend, USDD, RPC 보완), quote 정규화 | TronGrid | **JustLend, USDD**, (P1) TronGrid MCP |
 | **③ 계산·기록** | `shared/planning·eligibility·units`, `storage.ts`, 검토 화면, 테스트 | — | — |
 | **④ 지갑·거래** | TronLink 연결, jTRX 검증, 미리보기, 서명, 확정, 재조회, `/api/observe`, `/api/transactions` | TronGrid, **TronLink + Nile TRX** | — (직접 RPC) |
@@ -167,19 +169,19 @@ TypeScript · React + Vite · Node.js + Express(loopback) · Zod · decimal.js �
 - [ ] **TronGrid API Key** (전원): [trongrid.io](https://www.trongrid.io/)
 - [ ] **TronLink 개발 지갑 + Nile 테스트 TRX** (④): [Nile Faucet](https://nileex.io/join/getJoinPage)
 - [ ] **JustLend MCP, USDD MCP** 공식 저장소를 버전 고정해 받기 (②). USDD MCP는 지갑 자동 초기화 여부 확인
-- [ ] (대기) **TRON LLM API** 명세와 키 (①)
+- [x] **TRON LLM = Bank of AI API 키** (①), 모델 `gpt-5.6-terra` — 키는 받았으나 **크레딧 충전 전이라 호출 불가**, 현재는 NIM 사용: [B.AI API](https://docs.b.ai/llmservice/api/)
 - [ ] 저장소 위치 확정. OneDrive 밖 경로 권장 (예: `C:\dev\gwdc`)
 
 ### `.env.local`
 
 ```dotenv
-LLM_PROVIDER=nim
+LLM_PROVIDER=nim               # nim | bai(Bank of AI, 크레딧 충전 필요) | template
+BAI_BASE_URL=https://api.b.ai/v1
+BAI_API_KEY=
+BAI_MODEL=gpt-5.6-terra
 NIM_BASE_URL=https://integrate.api.nvidia.com/v1
 NIM_API_KEY=
-NIM_MODEL=
-TRON_LLM_BASE_URL=
-TRON_LLM_API_KEY=
-TRON_LLM_MODEL=
+NIM_MODEL=nvidia/nemotron-3-super-120b-a12b
 DATA_MODE=synthetic            # 실데이터 연결 후 live
 ENABLE_NILE_EXECUTION=false    # 지갑 준비 후 true
 TRONGRID_API_KEY=

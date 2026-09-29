@@ -4,5 +4,7 @@
   "jusdd": { "baseRate": "0.06", "liquidity": "5000000", "active": true },
   "psm": { "feeIn": "0", "feeOut": "0", "sellEnabled": true, "buyEnabled": true, "entryCapacity": "10000000", "exitLiquidity": "10000000" },
   "jtrx": { "baseRate": "0.03", "liquidity": "1000000", "active": true },
+  "staking": { "baseRate": "0.035", "srAddress": "TAAdjpNYfeJ2edcETNpad1QpQWJfyBdB9V" },
+  "swap": { "reserveUsdt": "40000000", "reserveTrx": "120000000", "toTrx": { "energy": 120000, "bandwidth": 350 }, "toUsdt": { "energy": 110000, "bandwidth": 340 } },
   "costBasis": { "energyFeeSun": 100, "bandwidthFeeSun": 1000, "trxPerUsdt": "3", "psmEnergy": { "sell": 250000, "buy": 310000, "sampleSize": 0 } }
 }

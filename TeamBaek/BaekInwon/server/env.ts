@@ -18,15 +18,23 @@ function loadEnvFile(file: string): Record<string, string> {
 const fileEnv = loadEnvFile(path.resolve(process.cwd(), ".env.local"));
 const get = (k: string, def = "") => process.env[k] ?? fileEnv[k] ?? def;
 
+/** 알 수 없는 값은 템플릿으로 두고 시작 로그에 경고한다 (조용히 "키 미설정"으로 보이지 않게) */
+function parseProvider(v: string): "bai" | "nim" | "template" {
+  if (v === "bai" || v === "nim" || v === "template") return v;
+  console.warn(`[env] LLM_PROVIDER=${v} 은(는) 지원하지 않습니다 (bai | nim | template). 템플릿으로 동작합니다.`);
+  return "template";
+}
+
 export const env = {
-  llmProvider: get("LLM_PROVIDER", "nim") as "nim" | "tron" | "template",
+  llmProvider: parseProvider(get("LLM_PROVIDER", "nim")),
   nimBaseUrl: get("NIM_BASE_URL", "https://integrate.api.nvidia.com/v1"),
   nimApiKey: get("NIM_API_KEY"),
-  nimModel: get("NIM_MODEL", "openai/gpt-oss-20b"),
+  nimModel: get("NIM_MODEL", "nvidia/nemotron-3-super-120b-a12b"),
   llmTimeoutMs: Number(get("LLM_TIMEOUT_MS", "45000")),
-  tronLlmBaseUrl: get("TRON_LLM_BASE_URL"),
-  tronLlmApiKey: get("TRON_LLM_API_KEY"),
-  tronLlmModel: get("TRON_LLM_MODEL"),
+  // Bank of AI (B.AI) LLM Service — OpenAI 호환 /chat/completions. 해커톤 안내의 "TRON LLM"이 이것이다.
+  baiBaseUrl: get("BAI_BASE_URL", "https://api.b.ai/v1"),
+  baiApiKey: get("BAI_API_KEY"),
+  baiModel: get("BAI_MODEL", "gpt-5.6-terra"),
   trongridApiKey: get("TRONGRID_API_KEY"),
   mcpJustlendCommand: get("MCP_JUSTLEND_COMMAND"),
   mcpUsddCommand: get("MCP_USDD_COMMAND"),
@@ -40,9 +48,11 @@ export const env = {
 export function publicConfig() {
   return {
     llmProvider: env.llmProvider,
-    llmModel: env.llmProvider === "nim" ? env.nimModel : env.tronLlmModel || undefined,
+    llmModel: env.llmProvider === "nim" ? env.nimModel : env.llmProvider === "bai" ? env.baiModel : undefined,
+    /** 선택한 공급자의 키가 있어 실제 LLM을 호출하는지 */
+    llmConfigured: (env.llmProvider === "nim" && Boolean(env.nimApiKey)) || (env.llmProvider === "bai" && Boolean(env.baiApiKey)),
     nimKeyConfigured: Boolean(env.nimApiKey),
-    tronLlmConfigured: Boolean(env.tronLlmApiKey && env.tronLlmBaseUrl),
+    baiKeyConfigured: Boolean(env.baiApiKey),
     trongridKeyConfigured: Boolean(env.trongridApiKey),
     dataMode: env.dataMode,
     enableNileExecution: env.enableNileExecution,
@@ -57,7 +67,7 @@ export function publicConfig() {
 /** 로그·오류 메시지에서 키를 지운다 */
 export function redact(s: string): string {
   let out = s;
-  for (const secret of [env.nimApiKey, env.tronLlmApiKey, env.trongridApiKey]) {
+  for (const secret of [env.nimApiKey, env.baiApiKey, env.trongridApiKey]) {
     if (secret && secret.length > 4) out = out.split(secret).join("***");
   }
   return out;

@@ -154,14 +154,57 @@ describe("Nile 계획", () => {
     expect(p50.allocation.invested).toBe("50");
   });
 
-  it("순익이 음수면 개발자 테스트 실행으로 표시하고 보유를 권고한다", () => {
+  it("순익이 음수면 보유를 권고하되 계획은 그대로 실행 가능하게 둔다", () => {
     const r = buildNilePlans(nileNeeds, { jtrx: { ...jtrx, baseRate: "0.000003" }, costBasis: basis({ source: live("nile") }) }, NOW);
-    expect(r.plans.find((p) => p.key === "NILE_80")!.label).toBe("개발자 테스트 실행");
+    expect(r.plans.find((p) => p.key === "NILE_80")!.label).toBe("Nile 실행 계획");
+    expect(r.plans.find((p) => p.key === "NILE_80")!.eligibility).not.toBe("ineligible");
     expect(r.plans.find((p) => p.recommended)!.key).toBe("HOLD");
   });
 
   it("지갑 잔고가 있으면 입력 금액 대신 실제 잔고를 쓴다", () => {
     const r = buildNilePlans(nileNeeds, { jtrx, costBasis: basis({ source: live("nile") }), walletBalanceTrx: "40" }, NOW);
     expect(r.plans.find((p) => p.key === "NILE_80")!.allocation.invested).toBe("2.42");
+  });
+  // Nile 체인 파라미터: 해제 대기 1일, 유지보수 30분
+  const nileStaking: ProductQuote = {
+    id: "nile:TRX-STAKE-VOTE", kind: "staking", market: "TRX 스테이킹 + SR 투표", token: "TRX", address: "TSr", chain: "nile", baseRate: "0.2", rateType: "APR", active: true,
+    rewards: { status: "none", note: "-" },
+    staking: { srAddress: "TSr", srName: "nile-sr", brokerage: "0.2", srVotes: "1", totalVotes: "1", unfreezeDelayDays: 1, voteRewardPerBlockTrx: "128", blockRewardPerBlockTrx: "8", candidates: 27, voteDelayDays: "0.0208" },
+    source: live("nile"),
+  };
+  const bigNeeds: UserNeeds = { ...nileNeeds, amount: "10000", bufferAmount: "0", expenses: [{ id: "e", date: "2026-10-06", amount: "2000", asset: "TRX", label: "D+7 지출" }] };
+
+  it("같은 계획 엔진으로 Nile 스테이킹(C)·인출일별 분산(L)·제외 경로(B)를 계산한다", () => {
+    const r = buildNilePlans(bigNeeds, { jtrx, staking: nileStaking, costBasis: basis({ source: live("nile") }) }, NOW);
+    const keys = r.plans.map((p) => p.key);
+    expect(keys).toEqual(["NILE_80", "NILE_50", "B", "C", "L", "HOLD"]);
+    expect(r.plans.every((p) => p.chain === "nile")).toBe(true);
+    const b = r.plans.find((p) => p.key === "B")!;
+    expect(b.eligibility).toBe("ineligible");
+    expect(b.reasons[0]).toMatch(/교환 견적/); // 이 입력에는 Nile SunSwap 경로가 없다
+    const c = r.plans.find((p) => p.key === "C")!;
+    expect(c.eligibility).not.toBe("ineligible");
+    // 해제 대기 1일: 보상 기간 = 30 − 1 − 0.0208일, 해제는 D+29
+    expect(c.steps.find((s) => s.action === "unstake")?.day).toBe(29);
+    expect(c.steps.find((s) => s.action === "stake")?.day).toBe(0);
+    const L = r.plans.find((p) => p.key === "L")!;
+    // D+7에 필요한 2,000 TRX도 해제 대기(1일)가 짧아 스테이킹할 수 있다
+    expect(L.ladder!.map((x) => x.needDay)).toEqual([7, 30]);
+    expect(L.ladder!.every((x) => x.product === "STAKE")).toBe(true);
+    expect(L.steps.find((s) => s.action === "unstake" && s.day === 6)).toBeTruthy();
+    expect(r.screening?.some((x) => x.category === "staking")).toBe(true);
+    expect(r.recommendation.planId).toBe(r.plans.find((p) => p.recommended)!.id);
+  });
+
+  it("Mainnet 데이터가 섞이면 체인 불일치로 제외한다", () => {
+    const r = buildNilePlans(bigNeeds, { jtrx, staking: { ...nileStaking, chain: "mainnet", source: live() }, costBasis: basis({ source: live("nile") }) }, NOW);
+    expect(r.plans.find((p) => p.key === "C")!.reasons.some((x) => /체인/.test(x))).toBe(true);
+  });
+
+  it("위험 성향이 추천에 반영된다 (보수적은 수익 나는 계획 중 예치 비중 최소)", () => {
+    const r = buildNilePlans({ ...bigNeeds, riskProfile: "conservative" }, { jtrx, staking: nileStaking, costBasis: basis({ source: live("nile") }) }, NOW);
+    const rec = r.plans.find((p) => p.recommended)!;
+    const positive = r.plans.filter((p) => p.key !== "HOLD" && p.eligibility !== "ineligible" && Number(p.netReturn) > 0);
+    expect(Number(rec.allocation.invested)).toBe(Math.min(...positive.map((p) => Number(p.allocation.invested))));
   });
 });

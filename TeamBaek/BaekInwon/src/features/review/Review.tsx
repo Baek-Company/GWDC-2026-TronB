@@ -3,26 +3,48 @@ import type { Update } from "../../App";
 import { api } from "../../lib/api";
 import { exportJson, type PersistedState } from "../../lib/storage";
 import { Decimal } from "../../../shared/units";
+import { TX_KIND_KO, type PlanningResult } from "../../../shared/schemas";
 import { ChainBadge, EligibilityBadge, ModeBadge, Money, timeKo, TxBadge } from "../common";
+import AgentPanel from "../agent/AgentPanel";
+import ReevaluateCard from "../agent/ReevaluateCard";
+import ReplayCard from "./ReplayCard";
 
 export default function Review({ state, update, notify }: { state: PersistedState; update: Update; notify: (m: string) => void }) {
   const [busy, setBusy] = useState(false);
   const nile = state.nile;
   const confirmedDeposits = nile.records.filter((r) => r.kind === "deposit" && r.status === "confirmed");
   const confirmedWithdraws = nile.records.filter((r) => r.kind === "withdraw" && r.status === "confirmed");
+  // 전액 인출이 있으면 포지션이 닫힌 것이다. 부분 인출은 순예치 원금에서 뺀다.
+  const fullyWithdrawn = confirmedWithdraws.some((r) => !r.partial);
+  const partialWithdrawn = confirmedWithdraws.filter((r) => r.partial).reduce((s, r) => s.plus(r.amountTrx ?? 0), new Decimal(0));
   const latestObs = nile.observations[nile.observations.length - 1];
   const nilePlan = nile.result?.plans.find((p) => p.id === confirmedDeposits[0]?.planId);
 
   // 예상 vs 실제: 같은 Nile 포지션·자산·체인일 때만 직접 비교한다. 예치 원금은 수익으로 세지 않는다.
   let comparison: { deposited: Decimal; elapsedDays: number; expected: Decimal; actual: Decimal; fees: Decimal } | undefined;
-  if (confirmedDeposits.length && !confirmedWithdraws.length && latestObs && nilePlan?.baseRate) {
-    const deposited = confirmedDeposits.reduce((s, r) => s.plus(new Decimal(r.amountDisplay.split(" ")[0])), new Decimal(0));
+  // 계획 금리는 실행 시점에 기록한 값을 쓴다 (계획을 다시 계산해도 원래 가정으로 비교)
+  const plannedRate = confirmedDeposits[0]?.plannedRate ?? nilePlan?.baseRate;
+  if (confirmedDeposits.length && !fullyWithdrawn && latestObs && plannedRate) {
+    const deposited = confirmedDeposits.reduce((s, r) => s.plus(r.amountTrx ?? r.amountDisplay.split(" ")[0]), new Decimal(0)).minus(partialWithdrawn);
     const first = Date.parse(confirmedDeposits[0].confirmedAt ?? confirmedDeposits[0].submittedAt ?? latestObs.observedAt);
     const elapsedDays = Math.max(0, (Date.parse(latestObs.observedAt) - first) / 86_400_000);
-    const expected = deposited.mul(nilePlan.baseRate).mul(elapsedDays).div(365);
+    const expected = deposited.mul(plannedRate).mul(elapsedDays).div(365);
     const actual = new Decimal(latestObs.underlyingValue).minus(deposited);
     const fees = confirmedDeposits.reduce((s, r) => s.plus(r.feeTrx ?? 0), new Decimal(0));
     comparison = { deposited, elapsedDays, expected, actual, fees };
+  }
+
+  // 스테이킹 예상 vs 실제: 투표가 확정된 뒤부터 보상이 쌓인다. 실제 = 미청구 보상(관측) + 청구해 받은 보상
+  const ok = (k: string) => nile.records.filter((r) => r.kind === k && r.status === "confirmed");
+  const staked = ok("stake").reduce((s, r) => s.plus(r.amountTrx ?? 0), new Decimal(0)).minus(ok("unstake").reduce((s, r) => s.plus(r.amountTrx ?? 0), new Decimal(0)));
+  const firstVote = ok("vote")[0];
+  const stakeRate = firstVote?.plannedRate ?? ok("stake")[0]?.plannedRate;
+  let stakingCmp: { staked: Decimal; days: number; expected: Decimal; actual: Decimal; claimed: Decimal } | undefined;
+  if (firstVote && stakeRate && latestObs && staked.gt(0)) {
+    const days = Math.max(0, (Date.parse(latestObs.observedAt) - Date.parse(firstVote.confirmedAt ?? firstVote.submittedAt ?? latestObs.observedAt)) / 86_400_000);
+    const claimed = ok("claim_reward").reduce((s, r) => s.plus(r.amountTrx ?? 0), new Decimal(0));
+    const unclaimed = new Decimal(latestObs.balances.find((b) => b.asset === "미청구 투표 보상 TRX")?.amount ?? 0);
+    stakingCmp = { staked, days, expected: staked.mul(stakeRate).mul(days).div(365), actual: unclaimed.plus(claimed), claimed };
   }
 
   async function reobserve() {
@@ -67,7 +89,7 @@ export default function Review({ state, update, notify }: { state: PersistedStat
         </div>
         {comparison ? (
           <div className="kv" style={{ marginTop: 12 }}>
-            <div>확정 예치 원금</div>
+            <div>순예치 원금 (예치 − 부분 인출)</div>
             <div>{comparison.deposited.toFixed()} TRX</div>
             <div>경과 시간</div>
             <div>{comparison.elapsedDays.toFixed(3)}일</div>
@@ -89,6 +111,27 @@ export default function Review({ state, update, notify }: { state: PersistedStat
         ) : (
           <p className="small muted">확정된 Nile 예치와 이후 관측이 있으면 같은 포지션의 예상/실제를 비교합니다.</p>
         )}
+        {stakingCmp && (
+          <div className="kv" style={{ marginTop: 10 }}>
+            <div>스테이킹 (순)</div>
+            <div>{stakingCmp.staked.toFixed()} TRX</div>
+            <div>투표 확정 후 경과</div>
+            <div>{stakingCmp.days.toFixed(3)}일</div>
+            <div>예상 투표 보상</div>
+            <div>
+              <Money v={stakingCmp.expected.toFixed()} asset="TRX" dp={6} /> <span className="tiny muted">(실행 시점 투표자 APR 기준)</span>
+            </div>
+            <div>실제 보상</div>
+            <div>
+              <Money v={stakingCmp.actual.toFixed()} asset="TRX" dp={6} /> <span className="tiny muted">(미청구 + 청구 {stakingCmp.claimed.toFixed()} TRX)</span>
+            </div>
+            <div>차이</div>
+            <div>
+              <Money v={stakingCmp.actual.minus(stakingCmp.expected).toFixed()} asset="TRX" dp={6} signed />
+              <span className="tiny muted"> · 보상은 유지보수 주기마다 쌓여 짧은 기간에는 0일 수 있습니다</span>
+            </div>
+          </div>
+        )}
         {latestObs && (
           <div className="tiny muted" style={{ marginTop: 8 }}>
             <ModeBadge mode={latestObs.source.mode} /> 최근 관측 {timeKo(latestObs.observedAt)} · {latestObs.valuationBasis}
@@ -104,6 +147,7 @@ export default function Review({ state, update, notify }: { state: PersistedStat
                   <th>TRX</th>
                   <th>jTRX</th>
                   <th>기초자산 가치</th>
+                  <th>스테이킹 · 미청구 보상</th>
                 </tr>
               </thead>
               <tbody>
@@ -113,6 +157,9 @@ export default function Review({ state, update, notify }: { state: PersistedStat
                     <td>{o.balances.find((b) => b.asset === "TRX")?.amount}</td>
                     <td>{o.balances.find((b) => b.asset === "jTRX")?.amount}</td>
                     <td>{o.underlyingValue} TRX</td>
+                    <td>
+                      {o.balances.find((b) => b.asset === "스테이킹 TRX")?.amount ?? "-"} · {o.balances.find((b) => b.asset === "미청구 투표 보상 TRX")?.amount ?? "-"}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -143,7 +190,7 @@ export default function Review({ state, update, notify }: { state: PersistedStat
                   <td>
                     <TxBadge s={r.status} />
                   </td>
-                  <td>{r.kind === "deposit" ? "예치" : "인출"}</td>
+                  <td>{TX_KIND_KO[r.kind]}</td>
                   <td>{r.amountDisplay}</td>
                   <td>
                     <code>{r.planId}</code>
@@ -164,6 +211,25 @@ export default function Review({ state, update, notify }: { state: PersistedStat
           </table>
         )}
       </div>
+
+      <AgentPanel
+        context="nile"
+        nile={{
+          wallet: nile.records[nile.records.length - 1]?.wallet,
+          txIds: nile.records.filter((r) => r.txId).map((r) => r.txId!),
+          records: nile.records.filter((r) => r.txId).map((r) => ({ txId: r.txId!, kind: r.kind, amount: r.amountDisplay })),
+          needs: nile.needs,
+          planKey: nile.result?.plans.find((p) => p.id === (nile.records.find((r) => r.kind === "deposit" && r.status === "confirmed")?.planId ?? nile.selectedPlanId))?.key,
+        }}
+        title="AI 에이전트: 내 Nile 거래 확인"
+        chips={["내 예치 어떻게 됐어?", "최근 거래가 확정됐어?", "지금 포지션 가치는?", "포지션 조정이 필요해?"]}
+        disabledReason={nile.records.length ? undefined : "아직 Nile 거래 기록이 없습니다. Nile 실행 탭에서 거래하면 AI가 영수증과 포지션을 확인해 줍니다."}
+      />
+
+      {/* 여러 자산이면 대표 자산 결과로 재평가·과거 재생한다 (자산별 요구사항이 들어 있다) */}
+      <ReevaluateCard latest={primaryOf(state.analyses[state.analyses.length - 1])} notify={notify} />
+
+      <ReplayCard latest={primaryOf(state.analyses[state.analyses.length - 1])} />
 
       <div className="card">
         <div className="row">
@@ -215,4 +281,9 @@ export default function Review({ state, update, notify }: { state: PersistedStat
       </div>
     </div>
   );
+}
+
+function primaryOf(r?: PlanningResult): PlanningResult | undefined {
+  const p = r?.portfolio?.parts[0];
+  return p ? { ...p.result, portfolio: undefined } : r;
 }

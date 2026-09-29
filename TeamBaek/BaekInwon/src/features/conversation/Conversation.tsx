@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { Update } from "../../App";
-import { api, type Health } from "../../lib/api";
+import { api } from "../../lib/api";
 import type { PersistedState } from "../../lib/storage";
-import { applyPatch, daysBetween, inputProblems, missingFields, nextQuestion, riskLabel, summarizeNeeds } from "../../../shared/needs";
+import { applyPatch, daysBetween, holdingsOf, inputProblems, missingFields, nextQuestion, riskLabel, summarizeNeeds } from "../../../shared/needs";
 import type { ChatMessage, NeedsPatch, UserNeeds } from "../../../shared/schemas";
 
 const FIELD_LABEL: Record<string, string> = {
@@ -21,6 +21,8 @@ const CHIPS = [
   "지출일을 45일 뒤로 바꿔 주세요",
   "지출일을 다시 7일 뒤로 당겨 주세요",
   "USDD 위험은 감수하지 않을래요",
+  "10,000 TRX를 90일 운용할게요. 지출은 없고 여유액도 없어요.",
+  "USDT 5,000과 TRX 20,000을 90일 운용해요. 20일 뒤 1,000 USDT, 60일 뒤 5,000 TRX를 써요. 여유액은 없어요.",
 ];
 
 interface Meta {
@@ -30,13 +32,11 @@ interface Meta {
 export default function Conversation({
   state,
   update,
-  health,
   goPlans,
   notify,
 }: {
   state: PersistedState;
   update: Update;
-  health?: Health;
   goPlans: () => void;
   notify: (m: string) => void;
 }) {
@@ -52,6 +52,7 @@ export default function Conversation({
   }, [state.messages.length, busy]);
 
   const needs = state.needs;
+  const other = needs.asset === "USDT" ? "TRX" : "USDT";
   const missing = missingFields(needs);
   const problems = inputProblems(needs);
   const confirmed = state.convState === "confirmed" || state.convState === "comparing";
@@ -134,12 +135,6 @@ export default function Conversation({
     }
   }
 
-  const llmLabel = health
-    ? health.config.nimKeyConfigured && health.config.llmProvider === "nim"
-      ? `NIM · ${health.config.llmModel}`
-      : "템플릿 (LLM 키 없음)"
-    : "";
-
   return (
     <div>
       <div className="row" style={{ marginBottom: 18 }}>
@@ -148,10 +143,7 @@ export default function Conversation({
           <h1 className="hero-title" style={{ fontSize: 34 }}>
             조건을 <em>대화로</em> 알려 주세요
           </h1>
-          <p className="sub">AI는 입력 추출과 설명만 맡고, 금액 계산·적격성 판단은 코드가 합니다.</p>
         </div>
-        <div className="spacer" />
-        <span className="badge gray">{llmLabel}</span>
       </div>
 
       <div className="grid-2">
@@ -230,8 +222,28 @@ export default function Conversation({
             <summary>폼으로 직접 입력·수정</summary>
             <div className="row" style={{ marginTop: 10, alignItems: "flex-end" }}>
               <label className="field">
-                보유 USDT
+                보유 자산
+                <select value={needs.asset} onChange={(e) => patchForm({ asset: e.target.value as "USDT" | "TRX" })}>
+                  <option value="USDT">USDT</option>
+                  <option value="TRX">TRX</option>
+                </select>
+              </label>
+              <label className="field">
+                보유 {needs.asset}
                 <input defaultValue={needs.amount} key={`a${needs.version}`} onBlur={(e) => /^\d+(\.\d+)?$/.test(e.target.value) && patchForm({ amount: e.target.value })} />
+              </label>
+              <label className="field">
+                추가 보유 {other} (없으면 비움)
+                <input
+                  key={`o${needs.version}`}
+                  defaultValue={holdingsOf(needs).find((h) => h.asset === other)?.amount ?? ""}
+                  onBlur={(e) => {
+                    const v = e.target.value.trim();
+                    if (!needs.amount) return;
+                    if (!v || Number(v) === 0) patchForm({ asset: needs.asset, amount: needs.amount });
+                    else if (/^\d+(\.\d+)?$/.test(v)) patchForm({ holdings: [{ asset: needs.asset, amount: needs.amount }, { asset: other, amount: v }] });
+                  }}
+                />
               </label>
               <label className="field">
                 운용 일수
@@ -268,7 +280,11 @@ export default function Conversation({
                 </select>
               </label>
             </div>
-            <ExpenseForm onAdd={(inDays, amount) => patchForm({ expenses: [...needs.expenses.map((x) => ({ date: x.date, amount: x.amount, asset: x.asset })), { inDays, amount, asset: "USDT" }] })} />
+            <ExpenseForm
+              assets={holdingsOf(needs).map((h) => h.asset)}
+              fallback={needs.asset}
+              onAdd={(inDays, amount, asset) => patchForm({ expenses: [...needs.expenses.map((x) => ({ date: x.date, amount: x.amount, asset: x.asset })), { inDays, amount, asset }] })}
+            />
             {needs.expenses.length > 0 && (
               <button className="btn small ghost" onClick={() => patchForm({ noExpenses: true })}>
                 지출 모두 지우기 (지출 없음)
@@ -286,9 +302,12 @@ export default function Conversation({
   );
 }
 
-function ExpenseForm({ onAdd }: { onAdd: (inDays: number, amount: string) => void }) {
+function ExpenseForm({ assets, fallback, onAdd }: { assets: string[]; fallback: string; onAdd: (inDays: number, amount: string, asset: string) => void }) {
   const [days, setDays] = useState("7");
   const [amt, setAmt] = useState("200");
+  const [asset, setAsset] = useState<string>();
+  const opts = assets.length ? assets : [fallback];
+  const cur = asset && opts.includes(asset) ? asset : opts[0];
   return (
     <div className="row" style={{ marginTop: 10, alignItems: "flex-end" }}>
       <label className="field">
@@ -296,10 +315,20 @@ function ExpenseForm({ onAdd }: { onAdd: (inDays: number, amount: string) => voi
         <input type="number" min={0} value={days} onChange={(e) => setDays(e.target.value)} />
       </label>
       <label className="field">
-        금액 (USDT)
+        금액
         <input value={amt} onChange={(e) => setAmt(e.target.value)} />
       </label>
-      <button className="btn small" disabled={!/^\d+$/.test(days) || !/^\d+(\.\d+)?$/.test(amt)} onClick={() => onAdd(Number(days), amt)}>
+      <label className="field">
+        자산
+        <select value={cur} onChange={(e) => setAsset(e.target.value)}>
+          {opts.map((a) => (
+            <option key={a} value={a}>
+              {a}
+            </option>
+          ))}
+        </select>
+      </label>
+      <button className="btn small" disabled={!/^\d+$/.test(days) || !/^\d+(\.\d+)?$/.test(amt)} onClick={() => onAdd(Number(days), amt, cur)}>
         지출 추가
       </button>
     </div>
