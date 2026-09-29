@@ -49,7 +49,7 @@
   - `provider.ts`: 공통 계약 `extractNeeds(messages, currentNeeds)`, `explainPlans(verifiedPlans)`
   - `nim.ts`: 비스트리밍, 30초 타임아웃, JSON 오류 시 1회 보정, 429 제한 재시도
   - `template.ts`: 키가 없거나 LLM 장애일 때 쓰는 질문·설명 템플릿
-  - `tron.ts`: TRON LLM 명세를 받은 뒤 추가
+  - `bai.ts`: Bank of AI(해커톤 "TRON LLM") `gpt-5.6-terra`, OpenAI 호환 공통 호출부 재사용. 크레딧 충전 전이라 현재는 NIM(`nemotron-3-super-120b-a12b`) 사용
 - 공통 스키마 조정과 최종 통합, README 작성
 
 ### MCP
@@ -60,7 +60,7 @@
 
 - **NVIDIA NIM API Key** ([build.nvidia.com](https://build.nvidia.com/)): `NIM_API_KEY`
 - NIM 모델 ID: 한국어 구조화 추출로 테스트한 뒤 `NIM_MODEL`에 고정
-- (대기) TRON LLM API: `TRON_LLM_BASE_URL`, `TRON_LLM_API_KEY`, `TRON_LLM_MODEL`
+- TRON LLM = **Bank of AI API Key** ([B.AI](https://docs.b.ai/llmservice/api/)): `BAI_API_KEY`, `BAI_MODEL=gpt-5.6-terra`, `BAI_BASE_URL=https://api.b.ai/v1`
 
 ### 먼저 넘겨줄 것
 
@@ -138,7 +138,7 @@ MCP 연결 결과(성공/실패/미확인), 허용 목록, A/B 정규화 quote, 
 - `shared/eligibility.ts`: 경로 실행 조건 판정
   - PSM 물량 부족, 비활성 시장, 체인 불일치, 오래된 데이터, 지출 초과, 음수 순익
   - USDD 위험을 받아들이지 않으면 B 제외
-- Nile 계획 계산: `예치액 ≤ 총잔고 − 지출 재원 − 여유액 − 거래비용 예산`. 100 TRX 기준 80/20과 50/50 비교
+- Nile 계획 계산: `예치액 ≤ 총잔고 − 지출 재원 − 여유액 − 거래비용 예산`. 100 TRX 기준 80/20과 50/50 비교. 같은 계획 엔진을 Nile 값으로 돌려 스테이킹(C)·인출일별 분산(L)·위험 성향 추천도 계산
 - `src/lib/storage.ts`
   - `schemaVersion`을 붙여 저장, 새로고침 복원, JSON 내보내기, 초기화
   - 원계획은 덮어쓰지 않고 새 버전으로 추가
@@ -215,7 +215,7 @@ Nile jTRX 가용성 결과(가장 먼저), `ActionPreview`, 실제 `ExecutionRec
 
 | 역할 | 키 / 계정 | MCP | 추가 스택 |
 | --- | --- | --- | --- |
-| ① 화면·AI·통합 | **NIM API Key**, TronGrid, (대기) TRON LLM | — | fetch 기반 LLM 어댑터 |
+| ① 화면·AI·통합 | **Bank of AI API Key**(TRON LLM), NIM API Key(예비), TronGrid | — | fetch 기반 LLM 어댑터 |
 | ② MCP·데이터 | TronGrid | **JustLend MCP, USDD MCP**, (P1) TronGrid MCP | MCP 클라이언트 SDK |
 | ③ 계산·기록 | — | — | decimal.js 집중 사용 |
 | ④ 지갑·거래 | TronGrid, **TronLink 지갑 + Nile TRX** | — (직접 RPC) | TronWeb, TronLink |
