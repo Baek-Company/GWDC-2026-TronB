@@ -31,7 +31,9 @@ describe('planning assumptions', () => {
   it('protects an upcoming expense, then releases it when the spending date moves past the horizon', () => {
     const input = { holdings: '1000', horizonDays: 30, expense: '200', reserve: '0' };
     expect(previewLiquidity({ ...input, expenseDay: 7 }).investableAmount).toBe('800');
-    expect(previewLiquidity({ ...input, expenseDay: 45 }).investableAmount).toBe('1000');
+    expect(previewLiquidity({ ...input, expenseDay: 45 })).toMatchObject({
+      dueWithinHorizon: false, protectedAmount: '200', investableAmount: '800',
+    });
     expect(() => previewLiquidity({ ...input, expenseDay: 7, reserve: '801' })).toThrow();
   });
 });

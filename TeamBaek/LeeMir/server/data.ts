@@ -1,7 +1,8 @@
 import { parseMarkets, type MarketSnapshot } from '../shared/markets';
+import { NILE_RPC } from './data/tron-rpc';
 
 export const JUSTLEND_URL = 'https://openapi.just.network/lend/jtoken';
-export const NILE_RPC = 'https://nile.trongrid.io';
+export { NILE_RPC };
 let cached: MarketSnapshot | undefined;
 let inFlight: Promise<MarketSnapshot> | undefined;
 

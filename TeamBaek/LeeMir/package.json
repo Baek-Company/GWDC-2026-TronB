@@ -16,6 +16,9 @@
     "snapshot": "node --env-file-if-exists=.env.local --import tsx scripts/snapshot.ts"
   },
   "dependencies": {
+    "@noble/hashes": "1.4.0",
+    "@phosphor-icons/react": "2.1.10",
+    "@scure/base": "1.1.9",
     "decimal.js": "10.6.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
